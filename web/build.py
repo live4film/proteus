@@ -6,6 +6,8 @@ s = rd('shell.html')
 s = s.replace('<!--ENGINE-->', '<script id="engine-src">\n' + rd('engine.js') + '\n</script>')
 s = s.replace('<!--IMPORTERS-->', '<script>\n' + rd('importers.js') + '\n</script>')
 s = s.replace('<!--UI-->', '<script type="module">\n' + rd('ui.js') + '\n</script>')
+import base64
+s = s.replace('__SPLASH__', 'data:image/jpeg;base64,' + base64.b64encode(open(os.path.join(here, 'splash.jpg'), 'rb').read()).decode())
 os.makedirs(os.path.join(here, 'dist'), exist_ok=True)
 open(os.path.join(here, 'dist', 'index.html'), 'w', encoding='utf-8').write(s)
 print('web/dist/index.html', len(s), 'bytes')

@@ -188,6 +188,28 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
 </style>
 </head>
 <body>
+<!--SPLASH-START-->
+<div id="splash" role="img" aria-label="Loading"><img src="__SPLASH__" alt=""><div class="sbar"><div></div></div></div>
+<style>
+#splash{position:fixed;inset:0;z-index:1000;background:#000;transition:opacity .5s ease}
+#splash img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#splash .sbar{position:absolute;left:50%;bottom:7%;width:min(420px,50vw);height:3px;transform:translateX(-50%);background:#ffffff22;border-radius:2px;overflow:hidden}
+#splash .sbar div{height:100%;width:0;background:linear-gradient(90deg,#ff7a1a,#3fd6ff)}
+#splash.run .sbar div{animation:splashbar 5s linear forwards}
+@keyframes splashbar{to{width:100%}}
+#splash.out{opacity:0;pointer-events:none}
+</style>
+<script>(function(){
+  // the 5 seconds start once the image is really on screen (heavy app code can delay the first paint)
+  var s=document.getElementById('splash'), img=s.querySelector('img'), started=false;
+  function start(){ if(started) return; started=true; requestAnimationFrame(function(){ requestAnimationFrame(function(){
+    window.__splashShownAt=performance.now(); s.classList.add('run');
+    setTimeout(function(){ window.__splashDoneAt=performance.now(); s.classList.add('out'); setTimeout(function(){ s.remove(); },550); },5000);
+  }); }); }
+  if (img.complete) start(); else { img.addEventListener('load', start); img.addEventListener('error', start); }
+  setTimeout(start, 3000);
+})();</script>
+<!--SPLASH-END-->
 <div id="app">
   <div id="top">
     <div class="brand">

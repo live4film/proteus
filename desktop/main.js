@@ -6,11 +6,27 @@ const fs = require('fs');
 // Let WebGL fall back to software rendering on PCs/VMs without a usable GPU
 app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 if (!app.requestSingleInstanceLock()) app.quit();
-let win = null;
+let win = null, splash = null;
+const SPLASH_MS = 5000;
+let splashTimerStarted = false, onSplashDone = null;
+function startSplashTimer() { if (splashTimerStarted) return; splashTimerStarted = true; setTimeout(() => onSplashDone && onSplashDone(), SPLASH_MS); }
+const T0 = Date.now(), trace = (what) => { if (process.env.PROTEUS_TRACE) fs.appendFileSync(process.env.PROTEUS_TRACE, `${what} ${Date.now() - T0}\n`); };
 
 const stateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 function loadState() { try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch { return { width: 1600, height: 980 }; } }
 function saveState() { if (!win || win.isDestroyed()) return; try { const b = win.getNormalBounds(); fs.writeFileSync(stateFile(), JSON.stringify({ ...b, maximized: win.isMaximized() })); } catch {} }
+
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 960, height: 540, frame: false, resizable: false, maximizable: false, fullscreenable: false,
+    center: true, show: false, backgroundColor: '#000000', title: 'Proteus', icon: path.join(__dirname, 'app', 'icon.png'),
+    webPreferences: { sandbox: true, contextIsolation: true },
+  });
+  splash.once('ready-to-show', () => { if (splash) { splash.show(); trace('splash-shown'); startSplashTimer(); } });
+  setTimeout(startSplashTimer, 4000); // never let a stuck splash hold the app back
+  splash.on('closed', () => { splash = null; if (win && !win.isDestroyed() && !win.isVisible()) app.quit(); });
+  splash.loadFile(path.join(__dirname, 'app', 'splash.html'));
+}
 
 function createWindow() {
   const st = loadState();
@@ -20,8 +36,11 @@ function createWindow() {
     icon: path.join(__dirname, 'app', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  if (st.maximized) win.maximize();
-  win.once('ready-to-show', () => win.show());
+  // show the main window only after the splash has had its 5 seconds and the app is ready
+  let ready = false, timeUp = !splash;
+  const reveal = () => { if (!ready || !timeUp || win.isDestroyed()) return; if (st.maximized) win.maximize(); win.show(); win.focus(); trace('main-shown'); if (splash && !splash.isDestroyed()) splash.destroy(); splash = null; };
+  win.once('ready-to-show', () => { ready = true; trace('main-ready'); reveal(); });
+  if (splash) onSplashDone = () => { timeUp = true; trace('splash-done'); reveal(); };
   win.on('close', saveState);
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file://')) { e.preventDefault(); shell.openExternal(url); } });
@@ -66,7 +85,9 @@ function buildMenu() {
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.whenReady().then(() => {
-  buildMenu(); createWindow();
+  buildMenu();
+  if (!process.env.PROTEUS_SELFTEST) createSplash();
+  createWindow();
   if (process.env.PROTEUS_SELFTEST) { // automated smoke test: load an example, check engine + saving, write result, quit
     const out = process.env.PROTEUS_SELFTEST;
     fs.mkdirSync(out, { recursive: true });
