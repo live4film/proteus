@@ -7,13 +7,18 @@ NM = os.path.join(D, 'node_modules')
 APP = os.path.join(D, 'app')
 V = os.path.join(APP, 'vendor')
 shutil.rmtree(APP, ignore_errors=True)
-for d in ['three/addons/controls', 'three/addons/environments', 'fonts']:
+for d in ['three/addons/controls', 'three/addons/environments', 'three/addons/loaders', 'three/addons/libs', 'three/addons/curves', 'fonts']:
     os.makedirs(os.path.join(V, d), exist_ok=True)
 cp = lambda a, b: shutil.copyfile(os.path.join(NM, a), os.path.join(V, b))
 cp('three/build/three.module.js', 'three/three.module.js')
 cp('three/examples/jsm/controls/OrbitControls.js', 'three/addons/controls/OrbitControls.js')
 cp('three/examples/jsm/environments/RoomEnvironment.js', 'three/addons/environments/RoomEnvironment.js')
 cp('three/LICENSE', 'three/LICENSE.txt')
+# FBX import: FBXLoader and what it imports
+cp('three/examples/jsm/loaders/FBXLoader.js', 'three/addons/loaders/FBXLoader.js')
+cp('three/examples/jsm/libs/fflate.module.js', 'three/addons/libs/fflate.module.js')
+cp('three/examples/jsm/curves/NURBSCurve.js', 'three/addons/curves/NURBSCurve.js')
+cp('three/examples/jsm/curves/NURBSUtils.js', 'three/addons/curves/NURBSUtils.js')
 cp('mp4-muxer/build/mp4-muxer.mjs', 'mp4-muxer.mjs')
 cp('mp4-muxer/LICENSE', 'mp4-muxer.LICENSE.txt')
 for w in ['400', '500', '600']:

@@ -126,6 +126,9 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
 .netTools button{width:26px;height:26px;border-radius:6px;background:var(--bg2);border:1px solid var(--line);color:var(--fg2);cursor:pointer}
 .netTools button:hover{color:var(--fg);border-color:var(--line2)}
 /* tab menu */
+#ctxMenu{position:fixed;top:0;left:0;z-index:120;min-width:200px}
+#ctxMenu .sep2{height:1px;background:var(--line);margin:4px 6px}
+#ctxMenu kbd{float:right;color:var(--fg3);font:10.5px var(--mono);border:0;background:none}
 #tabMenu{position:fixed;width:250px;max-height:380px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;box-shadow:0 16px 40px #000a;display:none;flex-direction:column;z-index:100;overflow:hidden}
 #tabMenu.open{display:flex}
 #tabMenu input{margin:8px;background:var(--bg1);border:1px solid var(--line2);border-radius:5px;color:var(--fg);padding:6px 8px;font:12px var(--sans);outline:none}
@@ -197,6 +200,7 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
         <button data-act="new">New scene<span class="hint">Start from an empty network</span></button>
         <button data-act="save">Save scene…<span class="hint">Download the network as a .json file</span></button>
         <button data-act="load">Open scene…<span class="hint">Load a .json file or paste JSON</span></button>
+        <button data-act="import">Import…<span class="hint">OBJ, FBX, Alembic, Maya nCache, PC2, STL</span></button>
         <button data-act="obj">Export OBJ…<span class="hint">Displayed geometry as .obj (zipped)</span></button>
       </div>
     </div>
@@ -282,10 +286,12 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
     <label>FPS</label><input class="num" id="fpsNum" value="24" style="width:42px">
   </div>
 </div>
+<div id="ctxMenu" class="dropdown"></div>
 <div id="tabMenu"><input id="tabSearch" placeholder="Search nodes…" autocomplete="off"><div id="tabList"></div></div>
 <div id="modal"><div class="mbox"><h3 id="mTitle"></h3><div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div></div>
 <div id="toast"></div>
 <!--ENGINE-->
+<!--IMPORTERS-->
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <!--UI-->
 </body>

@@ -80,11 +80,12 @@ app.whenReady().then(() => {
           for (let i = 0; i < 240 && !(P.geo && P.geo.P.length); i++) await new Promise(r => setTimeout(r, 250));
           const saved = await (await window.claude.use('downloads')).save({ filename: 'selftest.proteus.json', data: JSON.stringify(P.state.nodes) });
           const gl = !!document.querySelector('#vp canvas').getContext('webgl2');
-          return { mode: P.engine.mode, points: P.geo ? P.geo.P.length : 0, errors: [...P.cookState.errors], fonts: document.fonts.check('12px Inter'), webgl2: gl, saved };
+          let fbx = 'missing'; try { await import('three/addons/loaders/FBXLoader.js'); fbx = 'ok'; } catch (e) { fbx = String(e); }
+          return { mode: P.engine.mode, points: P.geo ? P.geo.P.length : 0, errors: [...P.cookState.errors], fonts: document.fonts.check('12px Inter'), webgl2: gl, fbxReader: fbx, importers: typeof IMP, saved };
         })()`);
         const shot = await win.webContents.capturePage();
         fs.writeFileSync(path.join(out, 'screenshot.png'), shot.toPNG());
-        r.ok = r.points > 0 && r.errors.length === 0 && r.saved && r.saved.status === 'saved' && fs.existsSync(path.join(out, 'selftest.proteus.json'));
+        r.ok = r.points > 0 && r.errors.length === 0 && r.fbxReader === 'ok' && r.importers === 'object' && r.saved && r.saved.status === 'saved' && fs.existsSync(path.join(out, 'selftest.proteus.json'));
         done(r);
       } catch (e) { done({ ok: false, error: String(e) }); }
     }, 1500));

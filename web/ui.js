@@ -6,7 +6,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const ABBR = { box: 'Bx', sphere: 'Sp', grid: 'Gr', torus: 'To', tube: 'Tb', circle: 'Ci', line: 'Ln', transform: 'Xf', mountain: 'Mt', twist: 'Tw', smooth: 'Sm', wrangle: '{ }', subdivide: 'Sd', polyextrude: 'Ex', delete: 'Dl', fuse: 'Fu', scatter: 'Sc', copytopoints: 'Cp', color: 'Cd', normal: 'N', merge: 'Mg', null: 'Ø', particles: 'Pt', fire: 'Fi', water: 'Wa', sand: 'Sa', fluidsurface: 'Fs', material: 'Mt', whitewater: 'Ww', paint: 'Pa', fracture: 'Fr', debris: 'Rb', cloth: 'Cl', hair: 'Hr', voxelize: 'Vx' };
+const ABBR = { box: 'Bx', sphere: 'Sp', grid: 'Gr', torus: 'To', tube: 'Tb', circle: 'Ci', line: 'Ln', transform: 'Xf', mountain: 'Mt', twist: 'Tw', smooth: 'Sm', wrangle: '{ }', subdivide: 'Sd', polyextrude: 'Ex', delete: 'Dl', fuse: 'Fu', scatter: 'Sc', copytopoints: 'Cp', color: 'Cd', normal: 'N', merge: 'Mg', file: 'Fi', null: 'Ø', particles: 'Pt', fire: 'Fr', water: 'Wa', sand: 'Sa', fluidsurface: 'Fs', material: 'Mt', whitewater: 'Ww', paint: 'Pa', fracture: 'Vf', debris: 'Rb', cloth: 'Cl', hair: 'Hr', voxelize: 'Vx' };
 const catColor = (type) => CAT_COLORS[NODE_TYPES[type].cat];
 
 // ============================================================
@@ -86,6 +86,7 @@ function restore(s) {
   lastSnap = s;
   try { localStorage.setItem('proteus.scene', s); } catch (e) {}
   if (paint && !S.nodes[paint.id]) endPaint();
+  restoreAssets();
   renderNet(); renderParams(); requestCook(); syncToggles(); drawCamStrip();
 }
 function undo() { if (!undoStack.length) return toast('Nothing to undo'); if (paint) paint.stroking = false; redoStack.push(lastSnap); restore(undoStack.pop()); }
@@ -452,7 +453,8 @@ function toggleBypass(id) { const n = S.nodes[id]; n.bypass = !n.bypass; updateN
 
 let drag = null;
 net.addEventListener('pointerdown', (e) => {
-  closeTabMenu();
+  closeTabMenu(); closeCtx();
+  if (e.button === 2) return;
   const port = e.target.closest('.port'), nodeEl = e.target.closest('.node'), hit = e.target.closest('path.hit');
   if (e.button === 1 || (e.button === 0 && !nodeEl && !hit && !port)) {
     drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
@@ -537,6 +539,51 @@ net.addEventListener('wheel', (e) => {
   view.x = mx - ((mx - view.x) * z) / view.z; view.y = my - ((my - view.y) * z) / view.z; view.z = z;
   applyView();
 }, { passive: false });
+// ---------- right-click menus ----------
+const ctxEl = $('#ctxMenu');
+function closeCtx() { ctxEl.classList.remove('open'); }
+function showCtx(x, y, items) {
+  ctxEl.innerHTML = '';
+  for (const it of items) {
+    if (it === '-') { ctxEl.appendChild(el('div', 'sep2')); continue; }
+    const b = el('button', null, esc(it.label) + (it.key ? `<kbd>${it.key}</kbd>` : ''));
+    if (it.disabled) b.disabled = true, (b.style.opacity = 0.4);
+    b.addEventListener('click', () => { closeCtx(); it.run(); });
+    ctxEl.appendChild(b);
+  }
+  ctxEl.classList.add('open');
+  const r = ctxEl.getBoundingClientRect();
+  ctxEl.style.left = Math.min(x, innerWidth - r.width - 6) + 'px';
+  ctxEl.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+}
+function duplicateNode(id) { const n = S.nodes[id]; if (!n) return; const nid = addNode(n.type, n.x + 30, n.y + 50, { params: JSON.parse(JSON.stringify(n.params)) }); S.nodes[nid].inputs = n.inputs.slice(); S.selected = nid; renderNet(); renderParams(); commit(); }
+net.addEventListener('contextmenu', (e) => {
+  e.preventDefault(); closeTabMenu();
+  const nodeEl = e.target.closest('.node'), hit = e.target.closest('path.hit');
+  if (nodeEl) {
+    const id = nodeEl.dataset.id, n = S.nodes[id], T = NODE_TYPES[n.type];
+    if (S.selected !== id) select(id);
+    showCtx(e.clientX, e.clientY, [
+      { label: '➕ Add node after…', key: 'Tab', run: () => { const p = toNet(e.clientX, e.clientY); openTabMenu(e.clientX, e.clientY, { x: n.x, y: n.y + 80, from: id }); } },
+      '-',
+      { label: S.display === id ? '✓ Display flag' : 'Set display flag', key: 'R', run: () => setDisplay(id) },
+      { label: n.bypass ? '✓ Bypassed' : 'Bypass', key: 'B', run: () => toggleBypass(id) },
+      ...(n.type === 'file' ? [{ label: '📂 Import file…', run: () => pickFiles(id) }] : []),
+      ...(n.type === 'paint' ? [{ label: '🖌 Paint', run: () => startPaint(id) }] : []),
+      '-',
+      { label: 'Duplicate', key: 'Ctrl+D', run: () => duplicateNode(id) },
+      { label: 'Disconnect inputs', disabled: !n.inputs.some(Boolean), run: () => { n.inputs = T.inputs === -1 ? [] : n.inputs.map(() => null); renderNet(); commit(); requestCook(); } },
+      { label: 'Delete', key: 'Del', run: () => { deleteNode(id); renderNet(); renderParams(); commit(); requestCook(); } },
+    ]);
+  } else if (hit) {
+    const to = hit.dataset.to, idx = +hit.dataset.idx;
+    showCtx(e.clientX, e.clientY, [{ label: 'Delete wire', run: () => { disconnect(to, idx); selWire = null; renderNet(); commit(); requestCook(); } }]);
+  } else {
+    const p = toNet(e.clientX, e.clientY);
+    openTabMenu(e.clientX, e.clientY, { x: p.x - NW / 2, y: p.y - NH / 2, auto: !!S.selected });
+  }
+});
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctxMenu')) closeCtx(); });
 let netHover = false;
 net.addEventListener('pointerenter', () => (netHover = true));
 net.addEventListener('pointerleave', () => (netHover = false));
@@ -606,7 +653,7 @@ function placeNode(type) {
   const c = tabCtx || {}; closeTabMenu();
   const T = NODE_TYPES[type];
   let x = c.x, y = c.y, from = c.from;
-  if (c.auto && S.selected && S.nodes[S.selected] && T.inputs !== 0) { const s = S.nodes[S.selected]; from = s.id; x = s.x; y = s.y + 80; }
+  if (c.auto && S.selected && S.nodes[S.selected] && T.inputs !== 0) { const s = S.nodes[S.selected]; from = s.id; if (x == null) { x = s.x; y = s.y + 80; } }
   if (x == null) { const r = net.getBoundingClientRect(); const p = toNet(r.left + r.width / 2, r.top + r.height / 2); x = p.x - NW / 2; y = p.y; }
   const id = addNode(type, Math.round(x), Math.round(y));
   if (from && T.inputs !== 0) connect(from, id, 0);
@@ -677,6 +724,7 @@ function renderParams() {
   for (const d of T.params) {
     if (d.showIf && !d.showIf(n.params)) continue;
     if (d.t === 'paint') { paramsEl.appendChild(paintPanel(n, d)); continue; }
+    if (d.t === 'file') { paramsEl.appendChild(filePanel(n)); continue; }
     if (d.t === 'code') {
       const lab = el('div', 'pinfo', d.l + ' <span style="float:right">per-point script: <code>@P.y += …</code></span>');
       const w = el('div', 'codewrap'); const ta = el('textarea'); ta.value = n.params[d.n]; ta.spellcheck = false;
@@ -833,14 +881,15 @@ $('#fileMenu').addEventListener('click', (e) => {
   const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return;
   $$('.dropdown').forEach((d) => d.classList.remove('open'));
   if (a === 'new') { S = { nodes: {}, display: null, selected: null, nextId: 1, look: { ...DEFAULT_LOOK } }; engine.clear(); clearBake(); applyLook(); syncToggles(); renderNet(); renderParams(); commit(); requestCook(); }
+  if (a === 'import') { pickFiles(null); return; }
   if (a === 'save') {
-    const s = JSON.stringify({ proteus: 1, nodes: S.nodes, display: S.display, nextId: S.nextId, look: S.look }, null, 1);
+    const s = JSON.stringify({ proteus: 1, nodes: S.nodes, display: S.display, nextId: S.nextId, look: S.look, assets: sceneAssets() }, null, 1);
     if (downloadsNS) saveFile(`${sceneName()}.proteus.json`, s);
     else modal('Save scene', `<p style="margin:0 0 8px;color:var(--fg2)">Copy this JSON and keep it somewhere safe. Paste it into <b>File → Open scene</b> to restore.</p><textarea readonly>${esc(s)}</textarea>`, [['Close', () => {}], ['Copy', () => copyText(s), true]]);
   }
   if (a === 'load') {
     const openText = (txt) => {
-      try { const o = JSON.parse(txt); if (!o.nodes) throw 0; for (const n of Object.values(o.nodes)) if (!NODE_TYPES[n.type]) throw 0; S = { nodes: o.nodes, display: o.display, selected: null, nextId: o.nextId || 999, look: { ...DEFAULT_LOOK, ...(o.look || {}) } }; engine.clear(); clearBake(); applyLook(); syncToggles(); renderNet(); renderParams(); homeNet(); commit(); requestCook(); setTimeout(frameGeo, 50); return true; }
+      try { const o = JSON.parse(txt); if (!o.nodes) throw 0; for (const k in o.assets || {}) installAsset(deserializeAsset(o.assets[k])); for (const n of Object.values(o.nodes)) if (!NODE_TYPES[n.type]) throw 0; S = { nodes: o.nodes, display: o.display, selected: null, nextId: o.nextId || 999, look: { ...DEFAULT_LOOK, ...(o.look || {}) } }; engine.clear(); clearBake(); applyLook(); syncToggles(); renderNet(); renderParams(); homeNet(); commit(); requestCook(); setTimeout(frameGeo, 50); return true; }
       catch (err) { toast('That doesn\'t look like a Proteus scene'); return false; }
     };
     modal('Open scene', `<p style="margin:0 0 8px;color:var(--fg2)">Choose a <code>.proteus.json</code> file, or paste a scene's JSON below.</p><input type="file" id="loadFile" accept=".json,application/json" style="margin-bottom:10px;color:var(--fg2)"><textarea id="loadTa" placeholder='{"proteus":1, ...}'></textarea>`, [['Cancel', () => {}], ['Open', () => openText($('#loadTa').value), true]]);
@@ -1671,6 +1720,163 @@ function paintPanel(n, d) {
   return box;
 }
 
+
+// ============================================================
+// Importing files: assets, File node, FBX, persistence
+// ============================================================
+const assets = new Map(); // id -> asset (main-thread copy)
+const IMPORT_ACCEPT = '.obj,.fbx,.abc,.xml,.mcc,.pc2,.stl';
+const idb = (() => {
+  let dbp = null;
+  const open = () => (dbp = dbp || new Promise((res, rej) => { try { const r = indexedDB.open('proteus-assets', 1); r.onupgradeneeded = () => r.result.createObjectStore('assets'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  return {
+    async put(a) { try { const db = await open(); await new Promise((res, rej) => { const tx = db.transaction('assets', 'readwrite'); tx.objectStore('assets').put(a, a.id); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (e) {} },
+    async get(id) { try { const db = await open(); return await new Promise((res) => { const r = db.transaction('assets').objectStore('assets').get(id); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }); } catch (e) { return null; } },
+  };
+})();
+function installAsset(a, persist = true) {
+  assets.set(a.id, a);
+  registerAsset(a); localCooker.cache.clear();
+  if (worker) worker.postMessage({ type: 'asset', asset: a });
+  if (persist) idb.put(a);
+}
+async function restoreAssets() { // after a reload: bring back the data of every File node in the scene
+  const ids = [...new Set(Object.values(S.nodes).filter((n) => n.type === 'file' && n.params.asset).map((n) => n.params.asset))].filter((id) => !assets.has(id));
+  if (!ids.length) return;
+  let got = 0;
+  for (const id of ids) { const a = await idb.get(id); if (a) { installAsset(a, false); got++; } }
+  if (got) { shownSig = null; requestCook(); renderParams(); }
+}
+// --- embedding in saved scenes
+const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 32768) s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768)); return btoa(s); };
+const unb64 = (str) => { const bin = atob(str), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
+const encArr = (a) => (a ? { t: a.constructor.name, d: b64(new Uint8Array(a.buffer, a.byteOffset, a.byteLength)) } : null);
+const decArr = (o) => { if (!o) return null; const u8 = unb64(o.d); const C = { Float32Array, Float64Array, Int32Array }[o.t]; return new C(u8.buffer); };
+function serializeAsset(a) { return { id: a.id, name: a.name, format: a.format, kind: a.kind, n: a.n, notes: a.notes, prims: a.prims && { off: encArr(a.prims.off), idx: encArr(a.prims.idx) }, lines: a.lines && { off: encArr(a.lines.off), idx: encArr(a.lines.idx) }, Cd: encArr(a.Cd), piece: encArr(a.piece), times: encArr(a.times), frames: a.frames.map(encArr) }; }
+function deserializeAsset(o) { return { id: o.id, name: o.name, format: o.format, kind: o.kind, n: o.n, notes: o.notes || [], prims: o.prims && { off: decArr(o.prims.off), idx: decArr(o.prims.idx) }, lines: o.lines && { off: decArr(o.lines.off), idx: decArr(o.lines.idx) }, Cd: decArr(o.Cd), piece: decArr(o.piece), times: decArr(o.times), frames: o.frames.map(decArr) }; }
+function sceneAssets() { const out = {}; for (const n of Object.values(S.nodes)) if (n.type === 'file' && assets.has(n.params.asset)) out[n.params.asset] = serializeAsset(assets.get(n.params.asset)); return out; }
+
+// --- FBX via three.js FBXLoader (static meshes, transforms, skinning and morph animation)
+async function parseFBX(buf, name) {
+  let FBXLoader;
+  try { ({ FBXLoader } = await import('three/addons/loaders/FBXLoader.js')); } catch (e) { throw new Error('Couldn’t load the FBX reader: ' + e.message); }
+  let root;
+  try { root = new FBXLoader().parse(buf, ''); } catch (e) { throw new Error(`${name}: ${e.message || e}`); }
+  root.updateMatrixWorld(true);
+  const meshes = []; root.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position) meshes.push(o); });
+  if (!meshes.length) throw new Error(`${name}: no meshes in this FBX`);
+  let n = 0; const prims = [], piece = [], Cd = [], maps = [];
+  const tmp = new THREE.Vector3();
+  meshes.forEach((m, mi) => {
+    const g = m.geometry, pos = g.attributes.position, col = g.attributes.color, idx = g.index;
+    const key = new Map(), remap = new Int32Array(pos.count), reps = [];
+    for (let i = 0; i < pos.count; i++) {
+      const k = Math.round(pos.getX(i) * 1e5) + ',' + Math.round(pos.getY(i) * 1e5) + ',' + Math.round(pos.getZ(i) * 1e5);
+      let id = key.get(k); if (id == null) { id = reps.length; key.set(k, id); reps.push(i); } remap[i] = id;
+    }
+    const mat = Array.isArray(m.material) ? m.material[0] : m.material, mc = mat && mat.color ? (() => { const c = mat.color.clone().convertLinearToSRGB(); return [c.r, c.g, c.b]; })() : [0.75, 0.75, 0.78];
+    for (const i of reps) Cd.push(...(col ? [col.getX(i), col.getY(i), col.getZ(i)] : mc));
+    const count = idx ? idx.count : pos.count;
+    for (let t = 0; t + 2 < count; t += 3) {
+      const a = remap[idx ? idx.getX(t) : t], b = remap[idx ? idx.getX(t + 1) : t + 1], c = remap[idx ? idx.getX(t + 2) : t + 2];
+      if (a === b || b === c || a === c) continue;
+      prims.push([a + n, b + n, c + n]); piece.push(mi);
+    }
+    maps.push({ m, reps, base: n }); n += reps.length;
+  });
+  const sample = () => {
+    const F = new Float32Array(n * 3);
+    for (const { m, reps, base } of maps) reps.forEach((vi, k) => { m.getVertexPosition(vi, tmp); tmp.applyMatrix4(m.matrixWorld); F[(base + k) * 3] = tmp.x; F[(base + k) * 3 + 1] = tmp.y; F[(base + k) * 3 + 2] = tmp.z; });
+    return F;
+  };
+  const frames = [], times = [], notes = [`${meshes.length} mesh${meshes.length > 1 ? 'es' : ''}`];
+  const clips = root.animations || [];
+  if (clips.length) {
+    const clip = clips.reduce((a, b) => (b.duration > a.duration ? b : a));
+    const mixer = new THREE.AnimationMixer(root), act = mixer.clipAction(clip); act.setLoop(THREE.LoopOnce, 1); act.clampWhenFinished = true; act.play();
+    let nf = Math.max(1, Math.ceil(clip.duration * fps) + 1), step = 1;
+    while ((nf / step) * n * 12 > 400 * 1048576) step++; // keep imported caches under ~400 MB
+    for (let f = 0; f < nf; f += step) { mixer.setTime(Math.min(f / fps, clip.duration)); root.updateMatrixWorld(true); frames.push(sample()); times.push(f / fps); }
+    notes.push(`animation “${clip.name || 'take'}”, ${clip.duration.toFixed(2)} s${step > 1 ? `, every ${step} frames (memory limit)` : ''}`);
+  } else { frames.push(sample()); times.push(0); }
+  return { name, format: 'FBX', kind: 'mesh', n, prims: IMP.flat(prims), lines: null, Cd: Float32Array.from(Cd), piece: meshes.length > 1 ? Int32Array.from(piece) : null, frames, times: Float64Array.from(times), notes };
+}
+
+// --- import flow
+function pickFiles(targetId) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = IMPORT_ACCEPT;
+  inp.addEventListener('change', () => { if (inp.files.length) importFiles([...inp.files], targetId); });
+  inp.click();
+}
+async function importFiles(files, targetId) {
+  const byExt = (e) => files.filter((f) => IMP.ext(f.name) === e);
+  const jobs = [], bad = files.filter((f) => !['obj', 'fbx', 'abc', 'xml', 'mcc', 'pc2', 'stl'].includes(IMP.ext(f.name)));
+  const objs = byExt('obj');
+  if (objs.length > 1 && objs.every((f) => /\d+\.obj$/i.test(f.name))) jobs.push({ label: objs[0].name + ` (+${objs.length - 1})`, run: async () => IMP.objSequence(await Promise.all(objs.map(async (f) => ({ name: f.name, text: await f.text() }))), fps) });
+  else for (const f of objs) jobs.push({ label: f.name, run: async () => IMP.parseOBJ(await f.text(), f.name) });
+  for (const f of byExt('stl')) jobs.push({ label: f.name, run: async () => IMP.parseSTL(await f.arrayBuffer(), f.name) });
+  for (const f of byExt('pc2')) jobs.push({ label: f.name, run: async () => IMP.parsePC2(await f.arrayBuffer(), f.name, fps) });
+  for (const f of byExt('abc')) jobs.push({ label: f.name, run: async () => IMP.parseAlembic(await f.arrayBuffer(), f.name) });
+  for (const f of byExt('fbx')) jobs.push({ label: f.name, run: async () => parseFBX(await f.arrayBuffer(), f.name) });
+  const nc = [...byExt('xml'), ...byExt('mcc')];
+  if (nc.length) jobs.push({ label: (byExt('xml')[0] || nc[0]).name, run: async () => IMP.parseNCache(await Promise.all(nc.map(async (f) => ({ name: f.name, buf: await f.arrayBuffer() }))), fps) });
+  if (!jobs.length) { toast(bad.length ? `Can’t import ${bad[0].name} — supported: OBJ, FBX, Alembic, Maya nCache (.xml + .mcc), PC2, STL` : 'Nothing to import'); return; }
+  const errors = [], made = [];
+  for (const [ji, job] of jobs.entries()) {
+    toast(`Importing ${job.label}…`); await new Promise((r) => setTimeout(r, 30));
+    try {
+      const a = await job.run();
+      a.id = 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      installAsset(a);
+      // where does it go?
+      let id = ji === 0 && targetId && S.nodes[targetId] ? targetId : null;
+      if (!id) {
+        const base = S.selected && S.nodes[S.selected] ? S.nodes[S.selected] : null;
+        const r = net.getBoundingClientRect(), c = toNet(r.left + r.width / 2, r.top + r.height / 3);
+        id = addNode('file', base ? base.x + 200 * (made.length + 1) : Math.round(c.x - NW / 2) + made.length * 190, base ? base.y : Math.round(c.y), { name: uniqueName('file').replace(/^file/, a.name.replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 18) + '_') });
+        if (a.kind === 'cache' && base && base.type !== 'file') { S.nodes[id].x = base.x; S.nodes[id].y = base.y + 80; connect(base.id, id, 0); }
+      }
+      const node = S.nodes[id]; node.params.asset = a.id;
+      // centimetre-scaled files (common from Maya / FBX) → suggest metres
+      const F0 = a.frames[0], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < F0.length; i++) { const k = i % 3; if (F0[i] < lo[k]) lo[k] = F0[i]; if (F0[i] > hi[k]) hi[k] = F0[i]; }
+      const ext = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+      if (ext > 50 && (node.params.scale ?? 1) === 1) { const s = Math.pow(10, -Math.ceil(Math.log10(ext / 10))); node.params.scale = s; a.notes = [...(a.notes || []), `very large units (${Math.round(ext).toLocaleString()} wide) → scale set to ${s}`]; }
+      made.push({ id, a });
+    } catch (e) { console.error(e); errors.push(`${job.label}: ${e.message || e}`); }
+  }
+  if (made.length) {
+    const last = made[made.length - 1];
+    S.display = last.id; S.selected = last.id; shownSig = null;
+    const span = Math.max(...made.map(({ a }) => (a.times.length > 1 ? Math.ceil((a.times[a.times.length - 1] - a.times[0]) * fps) + 1 : 1)));
+    if (span > endFrame) { endFrame = span; $('#endNum').value = endFrame; frameSlider.max = endFrame; drawBakeStrip(); drawCamStrip(); }
+    renderNet(); renderParams(); commit(); requestCook(); setTimeout(frameGeo, 600);
+    const a = last.a;
+    toast(`Imported ${a.name}: ${a.n.toLocaleString()} points${a.prims ? ', ' + (a.prims.off.length - 1).toLocaleString() + ' faces' : ''}${a.frames.length > 1 ? ', ' + a.frames.length + ' frames' : ''}`);
+  }
+  if (errors.length) modal('Import problem', `<div style="color:var(--fg2);line-height:1.7">${errors.map((e) => '• ' + esc(e)).join('<br>')}</div>`, [['OK', () => {}, true]]);
+}
+function filePanel(n) {
+  const box = el('div', 'ptools'), a = assets.get(n.params.asset);
+  const row = el('div', 'row');
+  const b = el('button', 'pbtn big', a ? '📂 Replace file…' : '📂 Import file…'); b.addEventListener('click', () => pickFiles(n.id));
+  row.appendChild(b); box.appendChild(row);
+  if (a) {
+    const fr = a.frames.length, dur = fr > 1 ? a.times[fr - 1] - a.times[0] : 0;
+    box.appendChild(el('div', 'pinfo', `<b style="color:var(--fg)">${esc(a.name)}</b> · ${esc(a.format)}${a.kind === 'cache' ? ' point cache' : ''}<br>${a.n.toLocaleString()} points${a.prims ? ' · ' + (a.prims.off.length - 1).toLocaleString() + ' faces' : ''}${fr > 1 ? ` · ${fr} frames (${dur.toFixed(2)} s)` : ' · static'}${(a.notes || []).length ? '<br>' + a.notes.map(esc).join('<br>') : ''}${a.kind === 'cache' ? '<br>Connect the matching geometry to this node’s input to apply the cache to it; on its own it shows the cached points.' : ''}`));
+  } else if (n.params.asset) box.appendChild(el('div', 'perr', '⚠ The file’s data isn’t stored in this browser any more — import it again.'));
+  else box.appendChild(el('div', 'pinfo', 'Supported: <b>OBJ</b> (and numbered OBJ sequences), <b>FBX</b> (meshes, skinned and morph animation), <b>Alembic</b> .abc (Ogawa), <b>Maya nCache</b> (select the .xml and its .mcc files together), <b>PC2</b> point caches and <b>STL</b>. You can also drag files onto the window.'));
+  return box;
+}
+// drag & drop anywhere
+let dragDepth = 0;
+const dropHint = el('div', null, '📂 Drop to import'); dropHint.style.cssText = 'position:fixed;inset:12px;border:2px dashed var(--accent);border-radius:14px;background:#0008;display:none;place-items:center;font-size:20px;color:var(--accent);z-index:400;pointer-events:none';
+document.body.appendChild(dropHint);
+window.addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; dropHint.style.display = 'grid'; } });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; dropHint.style.display = 'none'; } });
+window.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+window.addEventListener('drop', (e) => { dragDepth = 0; dropHint.style.display = 'none'; if (e.dataTransfer?.files?.length) { e.preventDefault(); importFiles([...e.dataTransfer.files], S.selected && S.nodes[S.selected]?.type === 'file' && !S.nodes[S.selected].params.asset ? S.selected : null); } });
+
 // ============================================================
 // Boot
 // ============================================================
@@ -1681,6 +1887,6 @@ setTimeout(drawCamStrip, 0);
 try { saved = localStorage.getItem('proteus.scene'); } catch (e) {}
 let restored = false;
 if (saved) { try { const o = JSON.parse(saved); if (o.nodes && Object.values(o.nodes).every((n) => NODE_TYPES[n.type])) { S.nodes = o.nodes; S.display = o.display; S.nextId = o.nextId; S.look = { ...DEFAULT_LOOK, ...(o.look || {}) }; restored = Object.keys(o.nodes).length > 0; } } catch (e) {} }
-if (restored) { lastSnap = snapshot(); renderNet(); renderParams(); requestAnimationFrame(() => { homeNet(); doCook(); frameGeo(); }); }
+if (restored) { setTimeout(restoreAssets, 0); lastSnap = snapshot(); renderNet(); renderParams(); requestAnimationFrame(() => { homeNet(); doCook(); frameGeo(); }); }
 else requestAnimationFrame(() => loadExample('terrain'));
 window.__proteus = { get paint() { return paint; }, get brush() { return brush; }, get state() { return S; }, cookState, engine, loadExample, ctx, get geo() { return currentGeo; } };

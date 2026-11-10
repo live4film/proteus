@@ -1858,12 +1858,69 @@ function decodeMask(str) {
 }
 const paintAttrName = (p) => (p.attr === 'custom' ? String(p.name || 'weight').replace(/[^\w]/g, '') || 'weight' : p.attr);
 const paintDefault = (attr) => (attr === 'mask' ? 0 : attrDef(attr));
+
+// ---------- imported files (assets) ----------
+// asset: { id, name, format, kind: 'mesh'|'cache', n, prims:{off,idx}|null, lines:{off,idx}|null, Cd:Float32Array|null,
+//          piece:Int32Array|null (per prim), frames:[Float32Array n*3], times:Float64Array (seconds) }
+const ASSETS = new Map();
+function registerAsset(a) { ASSETS.set(a.id, a); }
+function unflatList(L) { if (!L) return []; const out = new Array(L.off.length - 1); for (let i = 0; i < out.length; i++) out[i] = Array.from(L.idx.subarray(L.off[i], L.off[i + 1])); return out; }
+function sampleAsset(a, p, ctx) {
+  const F = a.frames, nf = F.length;
+  if (nf === 1) return { P: F[0], P2: null, t: 0 };
+  const T = a.times, t0 = T[0], t1 = T[nf - 1], span = t1 - t0;
+  let t = ((ctx.frame - 1 - p.frameOffset) / (ctx.fps || 24)) * p.speed + t0;
+  if (p.outside === 'loop' && span > 0) t = t0 + ((((t - t0) % span) + span) % span);
+  else t = clamp(t, t0, t1);
+  let lo = 0, hi = nf - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= t) lo = m; else hi = m; }
+  const w = T[hi] > T[lo] ? clamp((t - T[lo]) / (T[hi] - T[lo]), 0, 1) : 0;
+  return p.interpolate && w > 1e-6 && w < 1 - 1e-6 ? { P: F[lo], P2: F[hi], t: w } : { P: w > 0.5 ? F[hi] : F[lo], P2: null, t: 0 };
+}
+function fileCook(p, [inp], ctx) {
+  if (!p.asset) throw new Error('No file yet — click “📂 Import file…” in the parameters');
+  const a = ASSETS.get(p.asset);
+  if (!a) throw new Error('This file’s data isn’t loaded — import it again with “📂 Import file…”');
+  const S = sampleAsset(a, p, ctx), n = a.n;
+  const zup = p.upAxis === 'z', sc = p.scale;
+  const P = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let x = S.P[i * 3], y = S.P[i * 3 + 1], z = S.P[i * 3 + 2];
+    if (S.P2) { x += (S.P2[i * 3] - x) * S.t; y += (S.P2[i * 3 + 1] - y) * S.t; z += (S.P2[i * 3 + 2] - z) * S.t; }
+    P[i] = zup ? [x * sc, z * sc, -y * sc] : [x * sc, y * sc, z * sc];
+  }
+  if (a.kind === 'cache' && inp) {
+    if (inp.P.length !== n) throw new Error(`The cache has ${n.toLocaleString()} points but the input geometry has ${inp.P.length.toLocaleString()} — they must match`);
+    const g = inp.clone(); g.P = P; return g.prims.length ? computeNormals(g) : g;
+  }
+  const g = new Geo();
+  g.P = P;
+  g.prims = unflatList(a.prims); g.lines = unflatList(a.lines);
+  if (a.Cd) { g.Cd = new Array(n); for (let i = 0; i < n; i++) g.Cd[i] = [a.Cd[i * 3], a.Cd[i * 3 + 1], a.Cd[i * 3 + 2]]; }
+  if (a.piece && a.piece.length === g.prims.length) g.piece = Array.from(a.piece);
+  if (zup) g.prims = g.prims; // handedness is preserved by the axis swap (a rotation), so winding stays valid
+  return g.prims.length ? computeNormals(g) : g;
+}
 // ---------- node type registry ----------
 const hex2rgb = (h) => { const n = parseInt(String(h).replace('#', ''), 16) || 0; return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]; };
 
 const CAT_COLORS = { Generate: '#4f8cc9', Deform: '#c9844f', Topology: '#9a6ccf', Points: '#3fae8c', Dynamics: '#e0603a', Attribute: '#c94f7c', Utility: '#7d8590' };
 
 const NODE_TYPES = {
+  file: {
+    label: 'File', cat: 'Generate', inputs: 1, optionalInputs: true, inputNames: ['geometry to apply a point cache to (optional)'],
+    timeDep: (node) => { const a = ASSETS.get(node.params.asset); return !!a && a.frames.length > 1; },
+    params: [
+      { n: 'asset', l: 'File', t: 'file', d: '' },
+      { n: 'frameOffset', l: 'Frame Offset', t: 'int', d: 0, min: -500, max: 500 },
+      { n: 'speed', l: 'Speed', t: 'float', d: 1, min: 0, max: 4 },
+      { n: 'outside', l: 'Outside Range', t: 'menu', d: 'hold', options: [['hold', 'Hold first/last frame'], ['loop', 'Loop']] },
+      { n: 'interpolate', l: 'Interpolate Frames', t: 'toggle', d: true },
+      { n: 'scale', l: 'Scale', t: 'float', d: 1, min: 0.0001, max: 100 },
+      { n: 'upAxis', l: 'Up Axis', t: 'menu', d: 'y', options: [['y', 'Y up (as in file)'], ['z', 'Z up → convert to Y up']] },
+    ],
+    cook: (p, ins, ctx) => fileCook(p, ins, ctx),
+  },
   box: {
     label: 'Box', cat: 'Generate', inputs: 0,
     params: [{ n: 'size', l: 'Size', t: 'vec3', d: [1, 1, 1] }, { n: 'center', l: 'Center', t: 'vec3', d: [0, 0, 0] }, { n: 'divs', l: 'Divisions', t: 'int', d: 1, min: 1, max: 20 }, { n: 'scale', l: 'Uniform Scale', t: 'float', d: 1, min: 0, max: 5 }],
@@ -2369,7 +2426,8 @@ function evalParams(node, ctx) {
   return out;
 }
 function isTimeDep(node) {
-  if (NODE_TYPES[node.type].timeDep) return true;
+  const td = NODE_TYPES[node.type].timeDep;
+  if (typeof td === 'function' ? td(node) : td) return true;
   const s = JSON.stringify(node.params);
   return /\$F|\$T|@Time|@Frame/.test(s);
 }
@@ -2397,7 +2455,7 @@ class Cooker {
       const T = NODE_TYPES[n.type];
       if (n.bypass) geo = ins[0] ? ins[0].clone() : new Geo();
       else {
-        if (T.inputs > 0 && !ins[0]) throw new Error('Missing input');
+        if (T.inputs > 0 && !ins[0] && !T.optionalInputs) throw new Error('Missing input');
         const self = this;
         const c2 = {
           ...ctx, cooker: this, nodeId: id, node: n, nodes,
@@ -2468,6 +2526,7 @@ if (typeof window === 'undefined' && typeof self !== 'undefined' && typeof impor
   async function handle(m) {
     if (m.type === 'scene') { wnodes = m.nodes; return; }
     if (m.type === 'clear') { wc.clear(); return; }
+    if (m.type === 'asset') { registerAsset(m.asset); wc.cache.clear(); return; }
     if (m.type === 'cook') {
       const t0 = performance.now();
       const g = m.display && wnodes[m.display] ? cookAt(m.display, m.frame, m.fps) : null;
@@ -2498,4 +2557,4 @@ if (typeof window === 'undefined' && typeof self !== 'undefined' && typeof impor
   self.postMessage({ type: 'ready' });
 }
 
-if (typeof module !== 'undefined') module.exports = { packGeo, unpackGeo, Geo, NODE_TYPES, Cooker, defaultParams, computeNormals, faceNormal, toOBJ, evalNum, isExpr, CAT_COLORS };
+if (typeof module !== 'undefined') module.exports = { registerAsset, ASSETS, packGeo, unpackGeo, Geo, NODE_TYPES, Cooker, defaultParams, computeNormals, faceNormal, toOBJ, evalNum, isExpr, CAT_COLORS };
