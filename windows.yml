@@ -1,0 +1,129 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build web app
+        run: python web/build.py
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Assemble offline desktop app
+        working-directory: desktop
+        run: python scripts/prepare.py
+
+      - name: Build NSIS installer
+        working-directory: desktop
+        run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Proteus-Setup
+          path: desktop/dist/Proteus-Setup-*.exe
+          if-no-files-found: error
+
+  test:
+    name: Install, run and uninstall on Windows
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Proteus-Setup
+          path: installer
+
+      - name: Silent install
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem installer\Proteus-Setup-*.exe | Select-Object -First 1
+          Write-Host "Installing $($setup.Name) ($([math]::Round($setup.Length / 1MB)) MB)"
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\Proteus\Proteus.exe"
+          for ($i = 0; $i -lt 60 -and -not (Test-Path $exe); $i++) { Start-Sleep 2 }
+          if (-not (Test-Path $exe)) { throw "Proteus.exe not found after install" }
+          Write-Host "Installed: $exe"
+
+      - name: Check shortcuts and Apps & Features entry
+        shell: pwsh
+        run: |
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          $startMenu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+          if (-not (Test-Path "$desktop\Proteus.lnk")) { throw "Desktop shortcut missing" }
+          if (-not (Get-ChildItem $startMenu -Recurse -Filter 'Proteus.lnk')) { throw "Start menu shortcut missing" }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            Get-ItemProperty | Where-Object { $_.DisplayName -like 'Proteus*' }
+          if (-not $entry) { throw "No Apps & Features (uninstall) entry" }
+          Write-Host "Uninstall entry: $($entry.DisplayName) $($entry.DisplayVersion)"
+
+      - name: Launch Proteus and run self-test
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP\selftest"
+          $env:PROTEUS_SELFTEST = $out
+          $p = Start-Process "$env:LOCALAPPDATA\Programs\Proteus\Proteus.exe" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "Proteus did not finish its self-test in time" }
+          $result = Get-Content "$out\selftest-result.json" -Raw
+          Write-Host $result
+          $r = $result | ConvertFrom-Json
+          if (-not $r.ok) { throw "Self-test failed" }
+          if ($r.mode -ne 'worker') { Write-Warning "Cooking fell back to the main thread" }
+
+      - name: Upload self-test screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest
+          path: ${{ runner.temp }}\selftest
+          if-no-files-found: ignore
+
+      - name: Silent uninstall
+        shell: pwsh
+        run: |
+          $dir = "$env:LOCALAPPDATA\Programs\Proteus"
+          $un = Get-ChildItem $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process $un.FullName -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Proteus.exe"); $i++) { Start-Sleep 2 }
+          if (Test-Path "$dir\Proteus.exe") { throw "Proteus.exe still present after uninstall" }
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          if (Test-Path "$desktop\Proteus.lnk") { throw "Desktop shortcut left behind" }
+          Write-Host "Uninstalled cleanly"
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Proteus-Setup
+          path: installer
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installer/*.exe
+          generate_release_notes: true

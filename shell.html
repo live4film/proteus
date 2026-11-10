@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proteus — Procedural 3D Node Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#141619; --bg1:#1b1e22; --bg2:#22262b; --bg3:#2b3036; --bg4:#353b42;
+  --line:#33383f; --line2:#41474f; --fg:#d5d9de; --fg2:#9aa2ab; --fg3:#6c747d;
+  --accent:#e8a33d; --accent2:#4fa3e8; --sel:#f0c25a; --err:#e5534b; --disp:#4fa3e8; --byp:#d9b43a;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,monospace; --sans:Inter,system-ui,sans-serif;
+  --rightW:440px; --paramH:46%;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg0);color:var(--fg);font:12px/1.4 var(--sans);overflow:hidden;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit}
+#app{display:grid;grid-template-rows:38px 1fr 40px;height:100%}
+/* top bar */
+#top{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--bg1);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:.02em;margin-right:12px;font-size:13px}
+.brand svg{width:20px;height:20px}
+.brand small{color:var(--fg3);font-weight:400;margin-left:2px}
+.tbtn{background:transparent;border:1px solid transparent;border-radius:5px;padding:4px 9px;cursor:pointer;color:var(--fg2);display:inline-flex;align-items:center;gap:6px}
+.tbtn:hover{background:var(--bg3);color:var(--fg)}
+.tbtn.on{background:var(--bg3);color:var(--fg);border-color:var(--line2)}
+.sep{width:1px;height:18px;background:var(--line);margin:0 4px}
+.spacer{flex:1}
+.menu-wrap{position:relative}
+.dropdown{position:absolute;top:30px;left:0;background:var(--bg2);border:1px solid var(--line2);border-radius:7px;box-shadow:0 12px 30px #0008;padding:4px;min-width:220px;z-index:50;display:none}
+.dropdown.open{display:block}
+.dropdown button{display:block;width:100%;text-align:left;background:none;border:0;padding:6px 10px;border-radius:5px;cursor:pointer;color:var(--fg)}
+.dropdown button:hover{background:var(--bg4)}
+.dropdown .hint{color:var(--fg3);font-size:11px;display:block}
+/* main */
+#main{display:grid;grid-template-columns:1fr 5px var(--rightW);min-height:0}
+#vpWrap{position:relative;min-width:0;min-height:0;background:#202327}
+#vp{position:absolute;inset:0}
+#vp canvas{display:block;width:100%;height:100%;outline:none}
+#vpBar{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:4px;pointer-events:none}
+#vpBar > *{pointer-events:auto}
+.seg{display:flex;background:#16181bcc;border:1px solid var(--line);border-radius:6px;padding:2px;backdrop-filter:blur(6px)}
+.seg button{background:none;border:0;padding:3px 8px;border-radius:4px;cursor:pointer;color:var(--fg2);font-size:11px}
+.seg button:hover{color:var(--fg)}
+.seg button.on{background:var(--bg4);color:var(--fg)}
+#hud{position:absolute;left:10px;bottom:10px;font:11px var(--mono);color:var(--fg2);background:#16181bb0;padding:6px 9px;border-radius:6px;border:1px solid var(--line);pointer-events:none;white-space:pre}
+#hud b{color:var(--fg);font-weight:500}
+#axes{position:absolute;right:10px;bottom:10px;width:70px;height:70px;pointer-events:none}
+.splitV{background:var(--bg1);cursor:col-resize;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.splitV:hover,.splitH:hover{background:var(--accent)}
+#right{display:grid;grid-template-rows:var(--paramH) 5px 1fr;min-height:0;min-width:0}
+.splitH{background:var(--bg1);cursor:row-resize;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.pane{display:flex;flex-direction:column;min-height:0;background:var(--bg2)}
+.tabs{display:flex;align-items:stretch;height:28px;background:var(--bg1);border-bottom:1px solid var(--line);flex:none}
+.tab{padding:0 12px;display:flex;align-items:center;color:var(--fg3);cursor:pointer;border-right:1px solid var(--line);font-size:11.5px}
+.tab.on{color:var(--fg);background:var(--bg2);box-shadow:inset 0 2px 0 var(--accent)}
+.tabs .path{margin-left:auto;padding:0 10px;display:flex;align-items:center;color:var(--fg3);font:11px var(--mono)}
+/* params */
+#params{overflow:auto;flex:1;padding:0 0 14px}
+.phead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg2);z-index:2}
+.phead .ico{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff}
+.phead .ptype{color:var(--fg3);font-size:11px}
+.phead input{background:var(--bg1);border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 6px;font:12px var(--mono);width:150px}
+.prow{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;padding:3px 12px;min-height:28px}
+.prow:hover{background:#ffffff05}
+.plabel{color:var(--fg2);text-align:right;cursor:ew-resize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plabel.static{cursor:default}
+.pctl{display:flex;gap:6px;align-items:center;min-width:0}
+.num{width:76px;flex:none;background:var(--bg1);border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:3px 6px;font:11.5px var(--mono);outline:none}
+.num:focus,.txt:focus,textarea:focus{border-color:var(--accent2)}
+.num.expr{color:#8fd18f;background:#1c2a1c}
+.num.bad{color:var(--err);border-color:var(--err)}
+.vec .num{width:0;flex:1}
+input[type=range]{flex:1;min-width:40px;accent-color:var(--accent);height:14px}
+.txt{flex:1;background:var(--bg1);border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:4px 6px;font:11.5px var(--mono);outline:none}
+select.txt{font-family:var(--sans)}
+input[type=color]{width:44px;height:22px;border:1px solid var(--line);background:var(--bg1);border-radius:4px;padding:1px;cursor:pointer}
+input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
+.codewrap{padding:6px 12px}
+.codewrap textarea{width:100%;min-height:210px;resize:vertical;background:#15171a;border:1px solid var(--line);border-radius:6px;color:#d7dce2;font:12px/1.55 var(--mono);padding:10px;outline:none;tab-size:2;user-select:text}
+.perr{margin:10px 12px;padding:8px 10px;border-radius:6px;background:#3a1d1d;border:1px solid #6b2b2b;color:#ffb4ae;font:11.5px var(--mono)}
+.pempty{padding:30px 20px;color:var(--fg3);text-align:center;line-height:1.7}
+.pempty kbd,.help kbd{background:var(--bg4);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 5px;font:11px var(--mono);color:var(--fg)}
+.pinfo{padding:8px 12px;color:var(--fg3);font-size:11px}
+/* spreadsheet */
+#sheet{flex:1;overflow:auto;display:none}
+#sheet table{border-collapse:collapse;font:11px var(--mono);width:100%}
+#sheet th{position:sticky;top:0;background:var(--bg1);color:var(--fg2);font-weight:500;text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
+#sheet td{padding:2px 8px;text-align:right;border-bottom:1px solid #ffffff08;color:var(--fg)}
+#sheet td.i{color:var(--fg3)}
+#sheet .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:6px}
+.sheetinfo{padding:6px 10px;color:var(--fg3);font:11px var(--mono);border-bottom:1px solid var(--line);background:var(--bg2);position:sticky;left:0}
+/* network */
+#netPane{position:relative}
+#net{position:relative;flex:1;overflow:hidden;background-color:#1d2024;background-image:radial-gradient(#2c3137 1px,transparent 1px);background-size:20px 20px;cursor:default}
+#net.panning{cursor:grabbing}
+#netInner{position:absolute;left:0;top:0;transform-origin:0 0}
+#wires{position:absolute;left:0;top:0;overflow:visible;width:1px;height:1px}
+#wires path{fill:none;stroke:#8a939d;stroke-width:1.6}
+#wires path.hit{stroke:transparent;stroke-width:12;cursor:pointer}
+#wires path.hit:hover + path,#wires path.selw{stroke:var(--accent)}
+#wires path.temp{stroke:var(--accent);stroke-dasharray:5 4}
+.node{position:absolute;width:150px;height:36px;border-radius:7px;background:var(--bg3);border:1px solid #474e57;display:flex;align-items:stretch;box-shadow:0 3px 10px #0006;cursor:grab}
+.node.sel{border-color:var(--sel);box-shadow:0 0 0 1px var(--sel),0 3px 14px #0008}
+.node.err{border-color:var(--err);box-shadow:0 0 0 1px var(--err)}
+.node .flag{width:14px;flex:none;cursor:pointer;opacity:.55;transition:opacity .1s}
+.node .flag:hover{opacity:1}
+.node .fb{border-radius:6px 0 0 6px;background:#3b3f45}
+.node .fd{border-radius:0 6px 6px 0;background:#3b3f45}
+.node.byp .fb{background:var(--byp);opacity:1}
+.node.byp{opacity:.7}
+.node.disp .fd{background:var(--disp);opacity:1}
+.node .body{flex:1;display:flex;align-items:center;gap:7px;padding:0 7px;min-width:0}
+.node .ico{width:20px;height:20px;border-radius:5px;flex:none;display:grid;place-items:center;font:600 9.5px var(--sans);color:#fff}
+.node .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.node .lbl{position:absolute;left:156px;top:9px;color:var(--fg3);font-size:10.5px;white-space:nowrap;pointer-events:none}
+.port{position:absolute;width:12px;height:12px;border-radius:50%;background:#1d2024;border:2px solid #8a939d;cursor:crosshair;z-index:2}
+.port:hover,.port.hot{border-color:var(--accent);background:var(--accent)}
+.port.in{top:-7px}
+.port.out{bottom:-7px;left:69px}
+.port.in.conn{background:#8a939d}
+.netHint{position:absolute;right:10px;bottom:8px;color:var(--fg3);font-size:10.5px;pointer-events:none}
+.netTools{position:absolute;right:8px;top:36px;display:flex;flex-direction:column;gap:4px;z-index:3}
+.netTools button{width:26px;height:26px;border-radius:6px;background:var(--bg2);border:1px solid var(--line);color:var(--fg2);cursor:pointer}
+.netTools button:hover{color:var(--fg);border-color:var(--line2)}
+/* tab menu */
+#tabMenu{position:fixed;width:250px;max-height:380px;background:var(--bg2);border:1px solid var(--line2);border-radius:8px;box-shadow:0 16px 40px #000a;display:none;flex-direction:column;z-index:100;overflow:hidden}
+#tabMenu.open{display:flex}
+#tabMenu input{margin:8px;background:var(--bg1);border:1px solid var(--line2);border-radius:5px;color:var(--fg);padding:6px 8px;font:12px var(--sans);outline:none}
+#tabList{overflow:auto;padding:0 4px 6px}
+#tabList .cat{color:var(--fg3);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding:6px 8px 3px}
+#tabList .it{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;cursor:pointer}
+#tabList .it.act{background:var(--bg4)}
+#tabList .it .ico{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font:600 8px var(--sans);color:#fff}
+/* timeline */
+#tl{display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--bg1);border-top:1px solid var(--line)}
+#tl .tbtn{padding:4px 7px}
+#tlTrack{flex:1;position:relative;display:flex;align-items:center}
+#frameSlider{flex:1;accent-color:var(--accent);width:100%}
+#camStrip{position:absolute;left:8px;right:8px;top:-3px;height:10px;width:calc(100% - 16px);pointer-events:none}
+.dropdown.up{top:auto;bottom:34px;left:auto;right:0}
+#bakeStrip{position:absolute;left:8px;right:8px;bottom:2px;height:3px;width:calc(100% - 16px);pointer-events:none;image-rendering:pixelated}
+#bakeBtn.busy{color:var(--accent)}
+#paintBadge{position:absolute;left:50%;top:44px;transform:translateX(-50%);background:#2a1d14ee;border:1px solid #e8a33d;color:#ffd9a3;padding:6px 12px;border-radius:7px;font-size:11.5px;display:none;z-index:4;white-space:nowrap}
+#paintBadge.on{display:block}
+#paintBadge kbd{background:#0004;border:1px solid #e8a33d66;border-radius:3px;padding:0 4px;font:10.5px var(--mono)}
+#vp.painting canvas{cursor:none}
+.ptools{padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.ptools .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pbtn{background:var(--bg3);border:1px solid var(--line2);color:var(--fg);border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11.5px}
+.pbtn:hover{border-color:var(--fg3)}
+.pbtn.on{background:var(--accent);border-color:var(--accent);color:#1a1205;font-weight:600}
+.pbtn.big{padding:7px 14px;font-size:12.5px}
+#lightPop{position:absolute;top:44px;right:8px;width:260px;background:#16181bf0;border:1px solid var(--line2);border-radius:8px;padding:8px 4px;display:none;z-index:5;backdrop-filter:blur(6px)}
+#lightPop.open{display:block}
+#lightPop .prow{grid-template-columns:90px 1fr}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rgrid .prow{grid-template-columns:110px 1fr;padding:3px 0}
+.rprev{background:repeating-conic-gradient(#2a2e33 0 25%,#202327 0 50%) 0 0/16px 16px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;min-height:200px;overflow:hidden}
+.rprev canvas{max-width:100%;max-height:340px;display:block}
+.rprog{height:6px;background:var(--bg1);border-radius:3px;overflow:hidden;margin-top:10px;display:none}
+.rprog div{height:100%;width:0;background:var(--accent);transition:width .1s}
+.rstatus{color:var(--fg2);font-size:11.5px;margin-top:6px;min-height:16px}
+.mbox.wide{width:min(980px,95vw)}
+#tl .num{width:56px;text-align:center}
+#tl label{color:var(--fg3)}
+/* modal */
+#modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:200}
+#modal.open{display:grid}
+.mbox{width:min(720px,92vw);background:var(--bg2);border:1px solid var(--line2);border-radius:10px;box-shadow:0 20px 60px #000c;display:flex;flex-direction:column;max-height:86vh}
+.mbox h3{margin:0;padding:14px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--line)}
+.mbox .mb{padding:14px 16px;overflow:auto}
+.mbox textarea{width:100%;height:320px;background:var(--bg0);color:var(--fg);border:1px solid var(--line);border-radius:6px;font:11px/1.5 var(--mono);padding:10px;resize:vertical;user-select:text}
+.mbox .mf{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+.btn{background:var(--bg4);border:1px solid var(--line2);border-radius:6px;padding:6px 14px;cursor:pointer;color:var(--fg)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#1a1205;font-weight:600}
+.help{columns:2;column-gap:28px;line-height:2}
+.help div{break-inside:avoid}
+.help h4{margin:6px 0 2px;color:var(--fg2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+#toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--line2);padding:7px 14px;border-radius:7px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:300}
+#toast.show{opacity:1}
+#boot{position:absolute;inset:0;display:grid;place-items:center;color:var(--fg3)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div class="brand">
+      <svg viewBox="0 0 24 24"><path d="M12 2 21 7v10l-9 5-9-5V7z" fill="none" stroke="#e8a33d" stroke-width="1.8"/><path d="M12 7 16.5 9.5v5L12 17l-4.5-2.5v-5z" fill="#4fa3e8"/></svg>
+      Proteus <small>procedural 3D</small>
+    </div>
+    <div class="menu-wrap">
+      <button class="tbtn" data-menu="fileMenu">File ▾</button>
+      <div class="dropdown" id="fileMenu">
+        <button data-act="new">New scene<span class="hint">Start from an empty network</span></button>
+        <button data-act="save">Save scene…<span class="hint">Download the network as a .json file</span></button>
+        <button data-act="load">Open scene…<span class="hint">Load a .json file or paste JSON</span></button>
+        <button data-act="obj">Export OBJ…<span class="hint">Displayed geometry as .obj (zipped)</span></button>
+      </div>
+    </div>
+    <div class="menu-wrap">
+      <button class="tbtn" data-menu="exMenu">Examples ▾</button>
+      <div class="dropdown" id="exMenu"></div>
+    </div>
+    <div class="sep"></div>
+    <button class="tbtn" id="undoBtn" title="Undo (Ctrl+Z)">↶ Undo</button>
+    <button class="tbtn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
+    <div class="sep"></div>
+    <button class="tbtn" id="renderBtn" title="Render stills, video and image sequences">◉ Render</button>
+    <div class="spacer"></div>
+    <button class="tbtn" id="helpBtn">? Shortcuts</button>
+  </div>
+  <div id="main">
+    <div id="vpWrap">
+      <div id="vp"><div id="boot">Loading viewport…</div></div>
+      <div id="vpBar">
+        <div class="seg" id="shadeSeg">
+          <button data-shade="shaded" class="on">Shaded</button>
+          <button data-shade="wireshaded">Wire Shaded</button>
+          <button data-shade="wire">Wireframe</button>
+        </div>
+        <div class="seg">
+          <button id="tPoints" title="Show points">Points</button>
+          <button id="tNormals" title="Show point normals">Normals</button>
+          <button id="tGrid" class="on" title="Ground grid">Grid</button>
+          <button id="tShadows" title="Sun shadows">Shadows</button>
+          <button id="tLight" title="Lighting settings">☀ Light</button>
+        </div>
+        <div style="flex:1"></div>
+        <div class="seg"><button id="frameBtn" title="Frame geometry (F)">⤢ Frame</button></div>
+      </div>
+      <div id="hud"></div>
+      <canvas id="axes" width="140" height="140"></canvas>
+      <div id="lightPop"></div>
+      <div id="paintBadge"></div>
+    </div>
+    <div class="splitV" id="splitV"></div>
+    <div id="right">
+      <div class="pane">
+        <div class="tabs">
+          <div class="tab on" data-ptab="params">Parameters</div>
+          <div class="tab" data-ptab="sheet">Geometry Spreadsheet</div>
+          <div class="path" id="ppath"></div>
+        </div>
+        <div id="params"></div>
+        <div id="sheet"></div>
+      </div>
+      <div class="splitH" id="splitH"></div>
+      <div class="pane" id="netPane">
+        <div class="tabs"><div class="tab on">Network</div><div class="path">/scene</div></div>
+        <div id="net">
+          <div id="netInner"><svg id="wires"></svg></div>
+        </div>
+        <div class="netTools">
+          <button id="addBtn" title="Add node (Tab)">+</button>
+          <button id="homeBtn" title="Fit network (H)">⌂</button>
+          <button id="layoutBtn" title="Tidy layout (L)">≡</button>
+        </div>
+        <div class="netHint"><kbd style="font:10px var(--mono)">Tab</kbd> add node · drag ports to wire · double-click to display</div>
+      </div>
+    </div>
+  </div>
+  <div id="tl">
+    <button class="tbtn" id="startBtn" title="First frame">⏮</button>
+    <button class="tbtn" id="playBtn" title="Play / pause (Space)">▶</button>
+    <label>Frame</label><input class="num" id="frameNum" value="1">
+    <div id="tlTrack"><canvas id="camStrip" width="1000" height="10"></canvas><canvas id="bakeStrip" width="1000" height="4"></canvas><input type="range" id="frameSlider" min="1" max="240" value="1"></div>
+    <button class="tbtn" id="bakeBtn" title="Pre-compute every frame so playback is real-time">⚡ Bake</button>
+    <div class="menu-wrap">
+      <button class="tbtn" data-menu="camMenu" id="camBtn">🎥 Camera ▾</button>
+      <div class="dropdown up" id="camMenu">
+        <button data-cam="key">◆ Key camera at this frame<span class="hint">Shortcut K — stores the current view</span></button>
+        <button data-cam="del">Delete key at this frame</button>
+        <button data-cam="turn">Turntable over the frame range<span class="hint">One 360° orbit around the current view's target</span></button>
+        <button data-cam="toggle">Follow camera keys<span class="hint" id="camFollowHint"></span></button>
+        <button data-cam="clear">Clear all camera keys</button>
+      </div>
+    </div>
+    <label>End</label><input class="num" id="endNum" value="240">
+    <label>FPS</label><input class="num" id="fpsNum" value="24" style="width:42px">
+  </div>
+</div>
+<div id="tabMenu"><input id="tabSearch" placeholder="Search nodes…" autocomplete="off"><div id="tabList"></div></div>
+<div id="modal"><div class="mbox"><h3 id="mTitle"></h3><div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div></div>
+<div id="toast"></div>
+<!--ENGINE-->
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<!--UI-->
+</body>
+</html>

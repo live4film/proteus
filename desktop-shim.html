@@ -1,0 +1,21 @@
+<script>
+// Desktop bridge: native Save dialogs through the same "downloads" interface the web app uses
+(function () {
+  const D = window.proteusDesktop; if (!D) return;
+  const toBytes = async (data) => typeof data === 'string' ? new TextEncoder().encode(data)
+    : data instanceof Blob ? new Uint8Array(await data.arrayBuffer())
+    : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength))
+    : new Uint8Array(data);
+  const downloads = { save: async ({ filename, data }) => { const p = await D.saveFile(filename, await toBytes(data)); if (!p) throw { code: 'declined', message: 'Save cancelled' }; return { status: 'saved', path: p }; } };
+  window.claude = { use: async (name) => (name === 'downloads' ? downloads : null) };
+  D.onMenu((act) => {
+    const click = (sel) => { const e = document.querySelector(sel); if (e) e.click(); };
+    if (['new', 'load', 'save', 'obj'].includes(act)) click(`#fileMenu [data-act="${act}"]`);
+    else if (act === 'render') click('#renderBtn');
+    else if (act === 'undo') click('#undoBtn');
+    else if (act === 'redo') click('#redoBtn');
+    else if (act === 'help') click('#helpBtn');
+  });
+  document.documentElement.classList.add('desktop');
+})();
+</script>

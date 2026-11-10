@@ -1,0 +1,43 @@
+{
+  "name": "proteus",
+  "productName": "Proteus",
+  "version": "1.0.0",
+  "description": "Proteus — procedural 3D node editor",
+  "author": "Proteus",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "python scripts/prepare.py",
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@fontsource/inter": "5.1.1",
+    "@fontsource/jetbrains-mono": "5.1.2",
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "mp4-muxer": "5.2.2",
+    "three": "0.160.0"
+  },
+  "build": {
+    "appId": "app.proteus.desktop",
+    "productName": "Proteus",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "app/**/*"],
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Proteus",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "Proteus",
+      "artifactName": "Proteus-Setup-${version}.exe"
+    }
+  }
+}
